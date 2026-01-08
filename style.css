@@ -17,14 +17,15 @@
     width: 620px;
     height: 500px;
     background: rgba(0, 0, 0, var(--sb-opacity, 0.85));
-    backdrop-filter: blur(20px) saturate(150%);
-    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    backdrop-filter: blur(12px) saturate(120%);
+    -webkit-backdrop-filter: blur(12px) saturate(120%);
     border: 1px solid var(--sb-glass-border);
     border-radius: var(--sb-radius);
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-    display: none;
+    display: flex !important;
     flex-direction: column;
-    z-index: 2500;
+    z-index: 1;
+    /* Baseline: managed by focusWindow in JS */
     overflow: hidden;
     resize: both;
     min-width: 450px;
@@ -35,6 +36,16 @@
     font-family: inherit;
     transition: box-shadow 0.2s ease, border-color 0.2s ease;
     font-size: var(--sb-font-size, 0.9rem);
+    /* Performance */
+    will-change: transform;
+    contain: layout style;
+}
+
+/* Prevent window from going under ST top bar on mobile */
+@media (max-width: 768px) {
+    .sb-container:not(.sb-fullscreen) {
+        top: max(36px, var(--top, 36px)) !important;
+    }
 }
 
 .sb-container.sb-locked .sb-header {
@@ -51,18 +62,27 @@
 }
 
 .sb-container.sb-focus {
-    z-index: 9999;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
     border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Fullscreen Mode */
+.sb-container.sb-fullscreen {
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    border-radius: 0 !important;
+    resize: none !important;
 }
 
 /* Header */
 .sb-header {
     height: 48px;
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    justify-content: center;
-    padding: 0 16px;
+    padding: 0 12px;
     background: rgba(0, 0, 0, 0.25);
     border-bottom: 1px solid var(--sb-glass-border);
     cursor: grab;
@@ -78,28 +98,49 @@
     background: rgba(0, 0, 0, 0.3);
 }
 
-.sb-title {
-    font-weight: 600;
-    font-size: 0.95rem;
+.sb-controls-left {
+    grid-column: 1;
+    justify-self: start;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
+}
+
+.sb-title {
+    grid-column: 2;
+    justify-self: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-weight: 600;
+    font-size: 0.95rem;
     color: var(--sb-text-primary);
+    overflow: visible;
+    cursor: pointer;
+    position: relative;
+}
+
+/* No max-width needed - grid handles spacing */
+
+/* Grid layout handles spacing - icons can be shown on mobile now */
+
+.sb-title-text {
+    white-space: nowrap;
 }
 
 .sb-title i {
     color: var(--sb-accent);
     font-size: 1rem;
+    flex-shrink: 0;
 }
 
 .sb-controls {
+    grid-column: 3;
+    justify-self: end;
     display: flex;
     gap: 4px;
     align-items: center;
-    position: absolute;
-    right: 12px;
-    top: 50%;
-    transform: translateY(-50%);
 }
 
 .sb-control-btn {
@@ -140,6 +181,8 @@
     display: flex;
     flex: 1;
     overflow: hidden;
+    min-height: 0;
+    position: relative;
 }
 
 /* Sidebar */
@@ -247,7 +290,8 @@
 .sb-category-dropdown {
     display: none;
     position: absolute;
-    top: 45px;
+    top: 100%;
+    /* Relative to .sb-header or .sb-title */
     left: 50%;
     transform: translateX(-50%);
     width: 250px;
@@ -440,6 +484,7 @@
     position: relative;
     overflow: hidden;
     min-width: 0;
+    height: 100%;
 }
 
 .sb-content {
@@ -449,6 +494,7 @@
     background: transparent;
     font-size: 0.9rem;
     line-height: 1.65;
+    min-height: 0;
 }
 
 /* Editor */
@@ -545,8 +591,8 @@
 
 .sb-save-edit-btn,
 .sb-cancel-edit-btn {
-    width: 32px;
-    height: 32px;
+    width: 2em;
+    height: 2em;
     border-radius: 50%;
     border: none;
     display: flex;
@@ -594,8 +640,8 @@
 }
 
 .sb-controls-left .sb-control-btn {
-    width: 32px;
-    height: 32px;
+    width: 2em;
+    height: 2em;
     padding: 0;
     display: flex;
     align-items: center;
@@ -1092,7 +1138,7 @@
 
 .sb-container {
     position: fixed;
-    z-index: 9999;
+    /* z-index managed by JS focusWindow and getDynamicBaseZIndex */
     display: none;
     flex-direction: column;
     background: rgba(0, 0, 0, var(--sb-opacity, 0.85));
@@ -1105,6 +1151,12 @@
     font-family: var(--mainFontFamily);
     transition: box-shadow 0.2s;
     font-size: var(--sb-font-scale, 1em);
+    resize: both;
+    /* Allow user resizing */
+    min-width: 200px;
+    min-height: 200px;
+    max-width: 100vw;
+    max-height: 100vh;
 }
 
 .sb-background-layer {
@@ -1216,4 +1268,457 @@
 .sb-modal-body button.sb-modal-btn {
     width: 100%;
     margin-bottom: 4px;
+}
+
+/* Mobile overrides removed to allow consistent floating window scaling */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DIALOG MODE (Mobile Inline Panel via top-layer)
+   ═══════════════════════════════════════════════════════════════════════════ */
+dialog.sb-dialog-wrapper {
+    /* Reset default dialog styling */
+    padding: 0;
+    border: none;
+    background: transparent;
+    max-width: 100vw;
+    /* max-height removed to rely on JS clamping */
+    width: 100vw;
+    height: 50vh;
+    /* Initial */
+
+    /* Position at TOP (Offset for ST Header) */
+    margin: 0;
+    position: fixed;
+    top: 50px;
+    bottom: auto;
+    left: 0;
+
+    /* Allow overflow for dropdowns */
+    overflow: visible;
+
+    /* Top layer handles z-index, but this helps for stacking context */
+    z-index: 3005;
+    pointer-events: none;
+}
+
+dialog.sb-dialog-wrapper:focus {
+    outline: none;
+}
+
+dialog.sb-dialog-wrapper::backdrop {
+    /* Transparent backdrop so user can see chat behind */
+    background: transparent;
+    pointer-events: none !important;
+    /* Allow clicking/scrolling chat behind */
+}
+
+dialog.sb-dialog-wrapper .sb-container {
+    pointer-events: auto;
+    width: 100% !important;
+    height: 100% !important;
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    bottom: auto !important;
+    right: auto !important;
+    border-radius: 0 0 12px 12px;
+
+    /* Layout */
+    display: flex !important;
+    flex-direction: column !important;
+
+    /* Decoration */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--sb-glass-border);
+    border-top: none;
+}
+
+/* Flexbox Layout Fixes */
+.sb-main {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.sb-content-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.sb-content,
+.sb-editor-container {
+    flex: 1;
+    overflow-y: auto;
+}
+
+
+
+/* Dialog Drag Handle (HTML element) */
+.sb-dialog-handle {
+    pointer-events: auto !important;
+    /* Enable interaction */
+    position: absolute;
+    top: auto;
+    /* Changed from 0 */
+
+    left: 0;
+    right: 0;
+    bottom: -40px;
+    /* Outside */
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: ns-resize;
+    touch-action: none;
+    z-index: 10001;
+    pointer-events: auto;
+}
+
+/* ... existing handle pill styles ... */
+
+/* Settings Dialog (Top Layer) */
+dialog.sb-settings-dialog {
+    padding: 0;
+    border: none;
+    background: transparent;
+    overflow: visible;
+    z-index: 3010;
+}
+
+dialog.sb-settings-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+}
+
+/* Ensure modal body scrolls on mobile */
+.sb-modal-scroll-area {
+    flex: 1;
+    /* Changed from overflow-y: auto; max-height: 60vh; */
+    overflow-y: auto;
+    min-height: 0;
+    /* Critical for flex scrolling */
+    padding-right: 4px;
+    margin-right: -4px;
+    /* offset padding */
+}
+
+.sb-handle-pill {
+    width: 50px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 3px;
+    transition: background 0.15s ease;
+}
+
+/* Ensure content expands when sidebar collapses */
+.sb-content,
+.sb-content-wrapper {
+    flex: 1 !important;
+    min-width: 0 !important;
+}
+
+.sb-editor {
+    width: 100% !important;
+    box-sizing: border-box;
+}
+
+.sb-dialog-handle:hover .sb-handle-pill,
+.sb-dialog-handle:active .sb-handle-pill {
+    background: rgba(255, 255, 255, 0.8);
+}
+
+/* Sidebar Collapse Button */
+.sb-sidebar-collapse-btn {
+    cursor: pointer;
+    padding: 6px;
+    margin-right: 8px;
+    font-size: 14px;
+    transition: all 0.15s ease;
+    opacity: 0.7;
+}
+
+.sb-sidebar-collapse-btn:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Collapsed Sidebar State */
+/* Collapsed Sidebar State - Fully Hidden */
+.sb-sidebar.sb-collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    flex: 0 0 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border-right: none !important;
+    display: none !important;
+}
+
+/* Ensure content scrolls but window doesn't drag on text */
+.sb-content {
+    overscroll-behavior: contain;
+}
+
+/* Modal Styles (Dark Glass) */
+.sb-modal {
+    background: rgba(20, 20, 30, 0.95);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--sb-glass-border);
+    border-radius: 12px;
+    padding: 20px;
+    color: var(--sb-text);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.sb-modal-btn {
+    background: rgba(255, 255, 255, 0.08);
+    /* Dark Glass */
+    color: var(--sb-text);
+    border: 1px solid var(--sb-glass-border);
+    padding: 10px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    margin-bottom: 8px;
+}
+
+.sb-modal-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: var(--sb-accent);
+    color: #fff;
+}
+
+.sb-modal-btn.confirm {
+    background: var(--sb-accent);
+    color: #fff;
+    border-color: var(--sb-accent);
+}
+
+.sb-modal-btn.cancel {
+    background: transparent;
+    border-color: transparent;
+    opacity: 0.7;
+}
+
+.sb-modal-btn.cancel:hover {
+    opacity: 1;
+    background: rgba(255, 50, 50, 0.15);
+}
+
+/* Performance Overrides for Mobile */
+@media (max-width: 768px) {
+    .sb-container {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        background: rgba(15, 15, 20, 0.98) !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+    }
+
+    .sb-background-layer {
+        filter: brightness(0.4) !important;
+        -webkit-filter: brightness(0.4) !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+    }
+
+    .sb-container,
+    .sb-page-item,
+    .sb-control-btn {
+        transition: none !important;
+    }
+}
+
+/* FULLSCREEN OVERRIDE - Must be at the end to override all duplicate rules */
+.sb-container.sb-fullscreen {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    border-radius: 0 !important;
+    resize: none !important;
+    z-index: 60000 !important;
+}
+
+/* Dialog Drag Handle (for mobile dialog mode) */
+.sb-dialog-handle {
+    display: none;
+    /* Hidden when using integrated pagination handle */
+}
+
+/* Pagination bar handle (integrated into pagination) */
+.sb-pagination-handle {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: ns-resize;
+    padding: 8px 0;
+    touch-action: none;
+}
+
+.sb-handle-pill {
+    width: 40px;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+    transition: background 0.2s;
+}
+
+.sb-pagination-handle:hover .sb-handle-pill,
+.sb-pagination-handle:active .sb-handle-pill,
+.sb-dialog-handle:hover .sb-handle-pill,
+.sb-dialog-handle:active .sb-handle-pill {
+    background: rgba(255, 255, 255, 0.6);
+}
+
+/* Make pagination bar stay at bottom and be draggable */
+.sb-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.4);
+    border-top: 1px solid var(--sb-glass-border);
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    flex-shrink: 0;
+    z-index: 10;
+}
+
+.sb-pagination:active {
+    cursor: grabbing;
+}
+
+.sb-pagination-nav,
+.sb-pagination-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sb-pagination-nav span {
+    font-size: 0.85rem;
+    color: var(--sb-text-secondary);
+}
+
+.sb-pagination-nav i,
+.sb-pagination-actions i {
+    cursor: pointer;
+    padding: 4px;
+    color: var(--sb-text-muted);
+    transition: color 0.15s;
+}
+
+.sb-pagination-nav i:hover,
+.sb-pagination-actions i:hover {
+    color: var(--sb-text-primary);
+}
+
+.sb-pagination-nav i.disabled {
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+/* Page Animations */
+.sb-content {
+    backface-visibility: hidden;
+    /* For smooth 3D flip */
+}
+
+.sb-content.page-flip-left {
+    animation: sb-flip-in-left ease forwards;
+    transform-origin: left center;
+}
+
+.sb-content.page-flip-right {
+    animation: sb-flip-in-right ease forwards;
+    transform-origin: right center;
+}
+
+.sb-content.page-fade-left,
+.sb-content.page-fade-right {
+    animation: sb-fade-in ease forwards;
+}
+
+.sb-content.page-slide-left {
+    animation: sb-slide-in-left ease forwards;
+}
+
+.sb-content.page-slide-right {
+    animation: sb-slide-in-right ease forwards;
+}
+
+@keyframes sb-flip-in-left {
+    from {
+        transform: perspective(1000px) rotateY(-90deg);
+        opacity: 0;
+    }
+
+    to {
+        transform: perspective(1000px) rotateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes sb-flip-in-right {
+    from {
+        transform: perspective(1000px) rotateY(90deg);
+        opacity: 0;
+    }
+
+    to {
+        transform: perspective(1000px) rotateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes sb-fade-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes sb-slide-in-left {
+    from {
+        transform: translateX(-50px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes sb-slide-in-right {
+    from {
+        transform: translateX(50px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
 }

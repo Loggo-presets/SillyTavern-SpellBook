@@ -43,8 +43,57 @@ const defaultSettings = {
     pageFlipSpeed: 0.2,
     pageFlipStyle: 'flip',
     autoPaginate: true,
-    paginateLimit: 3000
+    paginateLimit: 3000,
+    enforceTopBoundary: true,
+    enforceBottomBoundary: true,
+    topBoundaryOffset: 70,
+    bottomBoundaryOffset: 50,
+    enforceLeftBoundary: true,
+    enforceRightBoundary: true,
+    leftBoundaryOffset: 0,
+    rightBoundaryOffset: 0,
+    mobileInlineMode: false
 };
+
+const bgCache = new Map(); // Cache optimized backgrounds
+
+async function optimizeGifBg(url) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "Anonymous";
+        img.onload = () => {
+            try {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                // Mobile Perf: Dynamic Downscale based on screen width
+                // This ensures images fit the device perfectly without wasting pixels/memory
+                // We cap at 1024 to prevent massive images on tablets
+                const screenLimit = (window.innerWidth || 480);
+                const MAX_WIDTH = isMobile() ? Math.min(screenLimit, 1024) : 800;
+                const QUALITY = isMobile() ? 0.6 : 0.7;
+
+                if (width > MAX_WIDTH || height > MAX_WIDTH) {
+                    const scale = Math.min(MAX_WIDTH / width, MAX_WIDTH / height);
+                    width *= scale;
+                    height *= scale;
+                }
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // WebP Compression
+                const dataUrl = canvas.toDataURL('image/webp', QUALITY);
+                resolve(dataUrl); // Resolve with the optimized data URL
+            } catch (e) {
+                resolve(url); // Fallback
+            }
+        };
+        img.onerror = () => resolve(url);
+        img.src = url;
+    });
+}
 
 let converter = null;
 
@@ -60,6 +109,9 @@ function getConverter() {
     return converter;
 }
 
+function isMobile() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
 
 function autoPaginateEntry(entry, limit) {
     if (!entry.pages || entry.pages.length === 0) return false;
@@ -255,6 +307,22 @@ function applyStyles() {
     } else {
         $('.sb-container').removeClass('sb-locked');
     }
+
+    // Force Z-Index Re-evaluation
+    $('.sb-container').each(function () {
+        const win = $(this);
+        const isFS = win.hasClass('sb-fullscreen');
+        const isActive = win.hasClass('sb-focus');
+
+        if (isFS) {
+            win.css('zIndex', isActive ? 60010 : 60000);
+        } else {
+            const baseZ = getDynamicBaseZIndex();
+            win.css('zIndex', isActive ? (baseZ + 10) : baseZ);
+        }
+    });
+
+    saveSettingsDebounced();
 }
 
 function resetSettings() {
@@ -364,6 +432,9 @@ async function updateContentUI(windowEl, category) {
                     <span>${currentIndex + 1} / ${pageCount}</span>
                     <i class="fa-solid fa-chevron-right sb-page-next ${currentIndex === pageCount - 1 ? 'disabled' : ''}" title="Next Page"></i>
                 </div>
+                <div class="sb-pagination-handle" title="Drag to resize">
+                    <div class="sb-handle-pill"></div>
+                </div>
                 <div class="sb-pagination-actions">
                     <i class="fa-solid fa-plus sb-page-add" title="Add Page to Entry"></i>
                     <i class="fa-solid fa-trash sb-page-del" title="Delete current page"></i>
@@ -380,6 +451,8 @@ async function updateContentUI(windowEl, category) {
                     requestAnimationFrame(() => {
                         const content = windowEl.find('.sb-content');
                         const style = settings.pageFlipStyle || 'flip';
+                        const speed = settings.pageFlipSpeed || 0.2;
+                        content.css('animation-duration', speed + 's');
                         const animClass = `page-${style}-left`;
                         content.addClass(animClass);
                         content.one('animationend', () => content.removeClass(animClass));
@@ -397,6 +470,8 @@ async function updateContentUI(windowEl, category) {
                     requestAnimationFrame(() => {
                         const content = windowEl.find('.sb-content');
                         const style = settings.pageFlipStyle || 'flip';
+                        const speed = settings.pageFlipSpeed || 0.2;
+                        content.css('animation-duration', speed + 's');
                         const animClass = `page-${style}-right`;
                         content.addClass(animClass);
                         content.one('animationend', () => content.removeClass(animClass));
@@ -427,6 +502,71 @@ async function updateContentUI(windowEl, category) {
         });
 
         windowEl.find('.sb-content-wrapper').append(footer);
+
+        // Attach resize events to pagination-handle for both mobile and desktop
+        const paginationHandle = footer.find('.sb-pagination-handle')[0];
+        if (paginationHandle) {
+            let startY = 0;
+            let startHeight = 0;
+            const targetEl = isMobile() ? windowEl.data('dialogEl') : windowEl[0];
+
+            if (targetEl) {
+                const onMove = (e) => {
+                    e.preventDefault(); // Prevent text selection
+                    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                    const deltaY = clientY - startY;
+
+                    if (isMobile()) {
+                        // Mobile Logic: Resize based on viewport height (vh)
+                        // Top-anchored: Drag down (positive) = Grow
+                        const currentTop = targetEl.offsetTop;
+                        const maxPixels = window.innerHeight - currentTop - 40;
+                        const maxVh = (maxPixels / window.innerHeight) * 100;
+
+                        // Current height in pixels -> vh
+                        const currentHeightPx = targetEl.offsetHeight;
+                        const currentHeightVh = (currentHeightPx / window.innerHeight) * 100;
+
+                        // New height = Start + Delta
+                        // We need start height in vh? 
+                        // Actually, let's just use pixels and convert to vh at the end if strictly needed, 
+                        // or just stick to the existing successful mobile logic.
+                        const newHeight = Math.min(maxVh, Math.max(20, startHeight + (deltaY / window.innerHeight * 100)));
+                        targetEl.style.height = newHeight + 'vh';
+                    } else {
+                        // Desktop Logic: Resize in pixels
+                        const newHeight = Math.max(350, startHeight + deltaY); // Min height 350px
+                        targetEl.style.height = newHeight + 'px';
+                    }
+                };
+
+                const onEnd = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onEnd);
+                    document.removeEventListener('touchmove', onMove);
+                    document.removeEventListener('touchend', onEnd);
+                };
+
+                const onStart = (e) => {
+                    startY = e.touches ? e.touches[0].clientY : e.clientY;
+                    if (isMobile()) {
+                        // For mobile loop logic
+                        const currentHeightPx = targetEl.offsetHeight;
+                        startHeight = (currentHeightPx / window.innerHeight) * 100;
+                    } else {
+                        startHeight = targetEl.offsetHeight;
+                    }
+
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onEnd);
+                    document.addEventListener('touchmove', onMove, { passive: false });
+                    document.addEventListener('touchend', onEnd);
+                };
+
+                paginationHandle.addEventListener('mousedown', onStart);
+                paginationHandle.addEventListener('touchstart', onStart, { passive: false });
+            }
+        }
     }
 }
 
@@ -491,7 +631,11 @@ function renderSidebar(windowEl, category) {
         li.on('click', () => {
             category.windowState.activeEntryId = entry.id;
             category.windowState.activePageIndex = 0;
-            renderFullUI(windowEl, category); // Full render to update background
+            renderFullUI(windowEl, category);
+            // Mobile: Auto-close sidebar on selection (Overlay behavior)
+            if (isMobile()) {
+                windowEl.find('.sb-sidebar').addClass('sb-collapsed');
+            }
             saveSettingsDebounced();
         });
 
@@ -592,7 +736,7 @@ function renderSidebar(windowEl, category) {
     });
 }
 
-function renderFullUI(windowEl, category) {
+async function renderFullUI(windowEl, category) {
     if (!windowEl || !category) return;
 
     // Header Sync
@@ -609,11 +753,45 @@ function renderFullUI(windowEl, category) {
 
     const bgLayer = windowEl.find('.sb-background-layer');
     if (bgUrl) {
-        bgLayer.css({
-            'background-image': `url("${bgUrl}")`,
-            'background-position': bgPos,
-            '--sb-blur': `${activeEntry?.backgroundBlur ?? category.backgroundBlur ?? 15}px`
-        });
+        const isGif = /\.gif($|\?)/i.test(bgUrl);
+
+        if (isMobile()) {
+            // Mobile Optimization:
+            // 1. No Backdrop Blur (Kill filter)
+            // 2. No Animated GIFs (Convert to static frame)
+
+            bgLayer.css({
+                '--sb-blur': '0px',
+                'filter': 'brightness(0.4)', // Darker for readability
+                'background-position': bgPos
+            });
+
+            if (isGif) {
+                // Async load static frame
+                // Set placeholder first
+                bgLayer.css('background-image', 'none');
+                try {
+                    const staticUrl = await optimizeGifBg(bgUrl);
+                    // Only apply if we haven't switched context
+                    if (windowEl.find('.sb-title-text').text() === category.name) {
+                        bgLayer.css('background-image', `url("${staticUrl}")`);
+                    }
+                } catch (e) {
+                    console.error("Failed to optimize GIF for mobile", e);
+                }
+            } else {
+                // Static image? Still potentially huge.
+                bgLayer.css('background-image', `url("${bgUrl}")`);
+            }
+        } else {
+            // Desktop Standard
+            bgLayer.css({
+                'background-image': `url("${bgUrl}")`,
+                'background-position': bgPos,
+                '--sb-blur': `${activeEntry?.backgroundBlur ?? category.backgroundBlur ?? 15}px`,
+                'filter': 'blur(var(--sb-blur, 15px)) brightness(0.6)'
+            });
+        }
         windowEl.addClass('sb-bg-active');
     } else {
         bgLayer.css('background-image', 'none');
@@ -858,89 +1036,137 @@ function showCategorySelectModal(currentCatId) {
 function showSettingsModal() {
     const settings = extension_settings[MODULE_NAME];
     return new Promise((resolve) => {
-        const overlay = $(`<div id="sb-modal-overlay"></div>`);
-        const modal = $(`
-            <div class="sb-modal" style="width: 500px; max-width: 90vw;">
-                <h3 style="border-bottom: 1px solid var(--sb-glass-border); padding-bottom: 10px; margin-bottom: 15px;">Spell Book Settings</h3>
+        const dialog = document.createElement('dialog');
+        dialog.className = 'sb-settings-dialog';
+        dialog.style.cssText = 'padding:0; border:none; background:transparent; max-width:100vw; max-height:100vh; overflow:hidden; outline:none;';
+
+        const modalHtml = `
+            <div class="sb-modal" style="width: 500px; max-width: 90vw; display: flex; flex-direction: column; max-height: 90vh;">
+                <div style="flex-shrink: 0;">
+                    <h3 style="border-bottom: 1px solid var(--sb-glass-border); padding-bottom: 10px; margin-bottom: 15px; text-align: center;">Spell Book Settings</h3>
+                </div>
                 
-                <div style="margin-bottom: 15px;">
-                    <label style="display:block; margin-bottom: 5px; font-weight:600;">Font Size: <span id="sb-modal-font-val">${Math.round((settings.fontScale || 1.0) * 100)}%</span></label>
-                    <input type="range" id="sb-modal-font-scale" min="0.7" max="1.3" step="0.05" value="${settings.fontScale || 1.0}" style="width: 100%;">
-                </div>
-
-                <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
-                    <label style="font-weight:600;">Theme Color Override</label>
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <input type="color" id="sb-modal-theme-color" value="${settings.themeColor || '#000000'}">
-                        <small class="menu_button" id="sb-modal-theme-reset">Reset</small>
+                <div class="sb-modal-scroll-area">
+                    <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+                       <label style="font-weight:600;">Mobile Mode</label>
+                       <input type="checkbox" id="sb-modal-mobile-inline" ${settings.mobileInlineMode ? 'checked' : ''}>
                     </div>
-                </div>
+                    <small style="display:block; margin-top:-10px; margin-bottom:15px; opacity:0.6;">Toggles the specialized mobile layout (inline panel vs floating window).</small>
 
-                <div style="margin-bottom: 15px;">
-                    <label style="display:block; margin-bottom: 5px; font-weight:600;">Default Category</label>
-                    <select id="sb-modal-default-cat" class="text_pole" style="width: 100%;">
-                        <option value="">None (First Available)</option>
-                        ${settings.categories.map(cat => `<option value="${cat.id}" ${cat.id === settings.defaultCategoryId ? 'selected' : ''}>${cat.name}</option>`).join('')}
-                    </select>
-                </div>
-
-                <div style="margin-bottom: 15px;">
-                    <label style="display:block; margin-bottom: 5px; font-weight:600;">Window Transparency: <span id="sb-modal-opacity-val">${Math.round((settings.opacity || 0.85) * 100)}%</span></label>
-                    <input type="range" id="sb-modal-opacity" min="0.1" max="1.0" step="0.05" value="${settings.opacity || 0.85}" style="width: 100%;">
-                </div>
-
-                <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
-                   <label style="font-weight:600;">Always On Top</label>
-                   <input type="checkbox" id="sb-modal-always-top" ${settings.alwaysOnTop ? 'checked' : ''}>
-                </div>
-
-                <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
-                   <label style="font-weight:600;">Book Mode (Pagination)</label>
-                   <input type="checkbox" id="sb-modal-book-mode" ${settings.bookModeEnabled ? 'checked' : ''}>
-                </div>
-
-                <div style="margin-bottom: 15px; border: 1px solid var(--sb-glass-border); padding: 10px; border-radius: 6px; background: rgba(255,255,255,0.02);">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                        <label style="font-weight:600;">Page Animation</label>
-                        <input type="checkbox" id="sb-modal-page-flip" ${settings.pageFlipAnimation ? 'checked' : ''}>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display:block; margin-bottom: 5px; font-weight:600;">Font Size: <span id="sb-modal-font-val">${Math.round((settings.fontScale || 1.0) * 100)}%</span></label>
+                        <input type="range" id="sb-modal-font-scale" min="0.7" max="1.3" step="0.05" value="${settings.fontScale || 1.0}" style="width: 100%;">
                     </div>
-                    <div id="sb-flip-settings" style="display: ${settings.pageFlipAnimation ? 'block' : 'none'};">
-                        <label style="display:block; margin-bottom: 5px; font-size: 0.85rem; opacity: 0.8;">Animation Style</label>
-                        <select id="sb-modal-flip-style" class="text_pole" style="width: 100%; margin-bottom: 10px;">
-                            <option value="flip" ${(settings.pageFlipStyle || 'flip') === 'flip' ? 'selected' : ''}>Flip</option>
-                            <option value="fade" ${settings.pageFlipStyle === 'fade' ? 'selected' : ''}>Fade</option>
-                            <option value="slide" ${settings.pageFlipStyle === 'slide' ? 'selected' : ''}>Slide</option>
+
+                    <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+                        <label style="font-weight:600;">Theme Color Override</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="color" id="sb-modal-theme-color" value="${settings.themeColor || '#000000'}">
+                            <small class="menu_button" id="sb-modal-theme-reset">Reset</small>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label style="display:block; margin-bottom: 5px; font-weight:600;">Default Category</label>
+                        <select id="sb-modal-default-cat" class="text_pole" style="width: 100%;">
+                            <option value="">None (First Available)</option>
+                            ${settings.categories.map(cat => `<option value="${cat.id}" ${cat.id === settings.defaultCategoryId ? 'selected' : ''}>${cat.name}</option>`).join('')}
                         </select>
-                        <label style="display:block; margin-bottom: 5px; font-size: 0.85rem; opacity: 0.8;">Animation Speed: <span id="sb-modal-flip-speed-val">${settings.pageFlipSpeed || 0.4}s</span></label>
-                        <input type="range" id="sb-modal-flip-speed" min="0.2" max="1.0" step="0.1" value="${settings.pageFlipSpeed || 0.4}" style="width: 100%;">
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label style="display:block; margin-bottom: 5px; font-weight:600;">Window Transparency: <span id="sb-modal-opacity-val">${Math.round((settings.opacity || 0.85) * 100)}%</span></label>
+                        <input type="range" id="sb-modal-opacity" min="0.1" max="1.0" step="0.05" value="${settings.opacity || 0.85}" style="width: 100%;">
+                    </div>
+
+                    <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+                       <label style="font-weight:600;">Always On Top</label>
+                       <input type="checkbox" id="sb-modal-always-top" ${settings.alwaysOnTop ? 'checked' : ''}>
+                    </div>
+
+                    <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+                       <label style="font-weight:600;">Enforce Top Boundary</label>
+                       <div style="display: flex; align-items: center; gap: 10px;">
+                           <input type="number" id="sb-modal-top-offset" class="text_pole" style="width: 50px; text-align: center;" value="${settings.topBoundaryOffset || 70}" title="Offset in pixels">
+                           <input type="checkbox" id="sb-modal-enforce-top" ${settings.enforceTopBoundary !== false ? 'checked' : ''}>
+                       </div>
+                    </div>
+
+                    <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+                       <label style="font-weight:600;">Enforce Bottom Boundary</label>
+                       <div style="display: flex; align-items: center; gap: 10px;">
+                           <input type="number" id="sb-modal-bottom-offset" class="text_pole" style="width: 50px; text-align: center;" value="${settings.bottomBoundaryOffset || 50}" title="Buffer in pixels">
+                           <input type="checkbox" id="sb-modal-enforce-bottom" ${settings.enforceBottomBoundary !== false ? 'checked' : ''}>
+                       </div>
+                    </div>
+
+                    <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+                       <label style="font-weight:600;">Enforce Left Boundary</label>
+                       <div style="display: flex; align-items: center; gap: 10px;">
+                           <input type="number" id="sb-modal-left-offset" class="text_pole" style="width: 50px; text-align: center;" value="${settings.leftBoundaryOffset || 0}" title="Offset in pixels">
+                           <input type="checkbox" id="sb-modal-enforce-left" ${settings.enforceLeftBoundary !== false ? 'checked' : ''}>
+                       </div>
+                    </div>
+
+                    <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+                       <label style="font-weight:600;">Enforce Right Boundary</label>
+                       <div style="display: flex; align-items: center; gap: 10px;">
+                           <input type="number" id="sb-modal-right-offset" class="text_pole" style="width: 50px; text-align: center;" value="${settings.rightBoundaryOffset || 0}" title="Offset in pixels">
+                           <input type="checkbox" id="sb-modal-enforce-right" ${settings.enforceRightBoundary !== false ? 'checked' : ''}>
+                       </div>
+                    </div>
+
+                    <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+                       <label style="font-weight:600;">Book Mode (Pagination)</label>
+                       <input type="checkbox" id="sb-modal-book-mode" ${settings.bookModeEnabled ? 'checked' : ''}>
+                    </div>
+
+                    <div style="margin-bottom: 15px; border: 1px solid var(--sb-glass-border); padding: 10px; border-radius: 6px; background: rgba(255,255,255,0.02);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                            <label style="font-weight:600;">Page Animation</label>
+                            <input type="checkbox" id="sb-modal-page-flip" ${settings.pageFlipAnimation ? 'checked' : ''}>
+                        </div>
+                        <div id="sb-flip-settings" style="display: ${settings.pageFlipAnimation ? 'block' : 'none'};">
+                            <label style="display:block; margin-bottom: 5px; font-size: 0.85rem; opacity: 0.8;">Animation Style</label>
+                            <select id="sb-modal-flip-style" class="text_pole" style="width: 100%; margin-bottom: 10px;">
+                                <option value="flip" ${(settings.pageFlipStyle || 'flip') === 'flip' ? 'selected' : ''}>Flip</option>
+                                <option value="fade" ${settings.pageFlipStyle === 'fade' ? 'selected' : ''}>Fade</option>
+                                <option value="slide" ${settings.pageFlipStyle === 'slide' ? 'selected' : ''}>Slide</option>
+                            </select>
+                            <label style="display:block; margin-bottom: 5px; font-size: 0.85rem; opacity: 0.8;">Animation Speed: <span id="sb-modal-flip-speed-val">${settings.pageFlipSpeed || 0.4}s</span></label>
+                            <input type="range" id="sb-modal-flip-speed" min="0.2" max="1.0" step="0.1" value="${settings.pageFlipSpeed || 0.4}" style="width: 100%;">
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 15px; border: 1px solid var(--sb-glass-border); padding: 10px; border-radius: 6px; background: rgba(255,255,255,0.02);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                            <label style="font-weight:600;">Auto-Paginate Long Entries</label>
+                            <input type="checkbox" id="sb-modal-auto-paginate" ${settings.autoPaginate ? 'checked' : ''}>
+                        </div>
+                        <div id="sb-paginate-settings" style="display: ${settings.autoPaginate ? 'block' : 'none'};">
+                            <label style="display:block; margin-bottom: 5px; font-size: 0.85rem; opacity: 0.8;">Character Limit per Page</label>
+                            <input type="number" id="sb-modal-paginate-limit" class="text_pole" value="${settings.paginateLimit || 2000}" style="width: 100%;">
+                        </div>
+                    </div>
+
+
+
+                    <div style="margin-bottom: 15px;">
+                        <label style="display:block; margin-bottom: 5px; font-weight:600;">Category Shortcuts</label>
+                        <div id="sb-modal-shortcuts-list" style="max-height: 120px; overflow-y: auto; border: 1px solid var(--sb-glass-border); padding: 5px; border-radius: 4px;"></div>
                     </div>
                 </div>
 
-                <div style="margin-bottom: 15px; border: 1px solid var(--sb-glass-border); padding: 10px; border-radius: 6px; background: rgba(255,255,255,0.02);">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                        <label style="font-weight:600;">Auto-Paginate Long Entries</label>
-                        <input type="checkbox" id="sb-modal-auto-paginate" ${settings.autoPaginate ? 'checked' : ''}>
-                    </div>
-                    <div id="sb-paginate-settings" style="display: ${settings.autoPaginate ? 'block' : 'none'};">
-                        <label style="display:block; margin-bottom: 5px; font-size: 0.85rem; opacity: 0.8;">Character Limit per Page</label>
-                        <input type="number" id="sb-modal-paginate-limit" class="text_pole" value="${settings.paginateLimit || 2000}" style="width: 100%;">
-                    </div>
-                </div>
-
-                <div style="margin-bottom: 15px;">
-                    <label style="display:block; margin-bottom: 5px; font-weight:600;">Category Shortcuts</label>
-                    <div id="sb-modal-shortcuts-list" style="max-height: 120px; overflow-y: auto; border: 1px solid var(--sb-glass-border); padding: 5px; border-radius: 4px;"></div>
-                </div>
-
-                <div class="sb-modal-footer">
-
+                <div class="sb-modal-footer" style="flex-shrink:0; margin-top: 15px;">
                     <button class="sb-modal-btn confirm">Done</button>
                 </div>
-            </div >
-            `);
+            </div>
+        `;
 
-        overlay.append(modal);
-        $('body').append(overlay);
+        dialog.innerHTML = modalHtml;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        const modal = $(dialog).find('.sb-modal');
 
         modal.find('#sb-modal-font-scale').on('input', function () {
             const val = parseFloat($(this).val());
@@ -1018,11 +1244,59 @@ function showSettingsModal() {
             saveSettingsDebounced();
         });
 
+        modal.find('#sb-modal-mobile-inline').on('change', function () {
+            settings.mobileInlineMode = $(this).is(':checked');
+            saveSettingsDebounced();
+
+            // Refresh all open windows to apply the layout change immediately
+            settings.categories.forEach(cat => {
+                if (cat.windowState && cat.windowState.isOpen) {
+                    const existingWin = $(`.sb-container[data-id="${cat.id}"]`);
+                    // If it's a dialog wrapper, remove that instead
+                    if (existingWin.data('dialogEl')) {
+                        existingWin.data('dialogEl').remove();
+                    } else {
+                        existingWin.remove();
+                    }
+                    createWindow(cat);
+                }
+            });
+
+            toastr.success('Mobile mode updated');
+        });
+
         modal.find('#sb-modal-always-top').on('change', function () {
             settings.alwaysOnTop = $(this).is(':checked');
             applyStyles();
             saveSettingsDebounced();
+            saveSettingsDebounced();
         });
+
+        modal.find('#sb-modal-enforce-top').on('change', function () {
+            settings.enforceTopBoundary = $(this).is(':checked');
+            saveSettingsDebounced();
+        });
+
+        modal.find('#sb-modal-top-offset').on('change', function () {
+            settings.topBoundaryOffset = parseInt($(this).val()) || 70;
+            saveSettingsDebounced();
+        });
+
+        modal.find('#sb-modal-enforce-bottom').on('change', function () {
+            settings.enforceBottomBoundary = $(this).is(':checked');
+            saveSettingsDebounced();
+        });
+
+        modal.find('#sb-modal-bottom-offset').on('change', function () {
+            settings.bottomBoundaryOffset = parseInt($(this).val()) || 50;
+            saveSettingsDebounced();
+        });
+
+        modal.find('#sb-modal-enforce-left').on('change', function () { settings.enforceLeftBoundary = $(this).is(':checked'); saveSettingsDebounced(); });
+        modal.find('#sb-modal-left-offset').on('change', function () { settings.leftBoundaryOffset = parseInt($(this).val()) || 0; saveSettingsDebounced(); });
+
+        modal.find('#sb-modal-enforce-right').on('change', function () { settings.enforceRightBoundary = $(this).is(':checked'); saveSettingsDebounced(); });
+        modal.find('#sb-modal-right-offset').on('change', function () { settings.rightBoundaryOffset = parseInt($(this).val()) || 0; saveSettingsDebounced(); });
 
         const shortcutList = modal.find('#sb-modal-shortcuts-list');
         settings.categories.forEach(cat => {
@@ -1065,9 +1339,21 @@ function showSettingsModal() {
             shortcutList.append(row);
         });
 
-        const close = () => { modal.remove(); overlay.remove(); resolve(); };
+        const close = () => {
+            dialog.close();
+            dialog.remove();
+            resolve();
+        };
+
         modal.find('.confirm').on('click', close);
-        overlay.on('click', (e) => { if (e.target.id === 'sb-modal-overlay') close(); });
+        // Close on escape or backdrop click
+        dialog.addEventListener('click', (e) => {
+            if (e.target === dialog) close();
+        });
+        dialog.addEventListener('close', () => {
+            dialog.remove();
+            resolve();
+        });
     });
 }
 
@@ -1354,6 +1640,7 @@ function createWindow(category) {
             <div class="sb-background-layer"></div>
             <div class="sb-header">
                 <div class="sb-controls-left">
+                    <i class="fa-solid fa-bars sb-control-btn sb-sidebar-collapse-btn" title="Toggle Entries" style="margin-right: 4px;"></i>
                     <i class="fa-solid fa-expand sb-control-btn sb-fullscreen-btn" title="Toggle Fullscreen"></i>
                     <i class="fa-solid ${ws.isLocked ? 'fa-lock' : 'fa-lock-open'} sb-control-btn sb-lock-btn ${ws.isLocked ? 'active' : ''}" title="Lock Window" style="margin-left: 4px; ${ws.isLocked ? 'color: var(--sb-accent); opacity: 1;' : 'opacity: 0.5;'}"></i>
                 </div>
@@ -1361,12 +1648,12 @@ function createWindow(category) {
                     <i class="fa-solid ${category.icon || 'fa-hat-wizard'} sb-icon-main"></i>
                     <span class="sb-title-text">${category.name}</span>
                     <i class="fa-solid fa-chevron-down sb-cat-chevron"></i>
+                    <div class="sb-category-dropdown"></div>
                 </div>
-                <div class="sb-category-dropdown"></div>
                 <div class="sb-controls">
-                    <i class="fa-solid fa-pencil sb-control-btn sb-edit-btn" title="Edit Mode" style="margin-right: 8px;"></i>
+                    <i class="fa-solid fa-pencil sb-control-btn sb-edit-btn" title="Edit Mode"></i>
                     
-                    <i class="fa-solid fa-gear sb-control-btn sb-settings-btn" title="Settings" style="margin-right: 8px;"></i>
+                    <i class="fa-solid fa-gear sb-control-btn sb-settings-btn" title="Settings"></i>
 
                     <!-- Window Controls -->
                     <i class="fa-solid fa-xmark sb-control-btn sb-close-btn" title="Close"></i>
@@ -1423,22 +1710,122 @@ function createWindow(category) {
         </div>
         `;
 
-    const windowEl = $(containerHtml);
-    $('body').append(windowEl);
+    let windowEl;
+    let isDialogMode = isMobile() && settings.mobileInlineMode;
+
+    if (isDialogMode) {
+        // Use <dialog> for mobile inline mode to bypass stacking contexts
+        const dialog = document.createElement('dialog');
+        dialog.className = 'sb-dialog-wrapper';
+        dialog.innerHTML = containerHtml;
+        document.body.appendChild(dialog);
+
+        // Prevent ESC from closing (we handle close manually)
+        dialog.addEventListener('cancel', (e) => e.preventDefault());
+
+        // Show in standard layer (modeless) so user can interact with chat background
+        dialog.show();
+
+        windowEl = $(dialog).find('.sb-container');
+        windowEl.addClass('sb-inline-mode');
+
+        // Add drag handle element to Dialog Wrapper (at bottom)
+        const handle = document.createElement('div');
+        handle.className = 'sb-dialog-handle';
+        handle.innerHTML = '<div class="sb-handle-pill"></div>';
+        dialog.appendChild(handle);
+
+        // Store reference to dialog on the container
+        windowEl.data('dialogEl', dialog);
+        windowEl.data('handleEl', handle);
+
+        // Mobile: Set dialog position at top of screen
+        const baseZ = getDynamicBaseZIndex();
+        dialog.style.cssText = `
+            position: fixed;
+            top: 70px;
+            left: 0;
+            width: 100vw;
+            height: 50vh;
+            margin: 0;
+            padding: 0;
+            border: none;
+            max-width: 100vw;
+            max-height: 100vh;
+            z-index: ${baseZ};
+        `;
+    } else {
+        // Standard div approach for desktop and mobile fullscreen
+        windowEl = $(containerHtml);
+        windowEl.appendTo('body');
+
+        // Mobile: Set default position immediately when window is created
+        if (isMobile() && !ws.isFullscreen) {
+            const baseZ = getDynamicBaseZIndex();
+            windowEl[0].style.cssText = `
+                position: fixed;
+                top: 70px;
+                left: 0;
+                width: 100vw;
+                height: 50vh;
+                z-index: ${baseZ};
+            `;
+        }
+    }
 
     const sidebar = windowEl.find('.sb-sidebar');
     const content = windowEl.find('.sb-content');
 
-    // Apply state
-    windowEl.css({
-        top: ws.top || '100px',
-        left: ws.left || '100px',
-        width: ws.width || '650px',
-        height: ws.height || '550px',
-        display: 'flex'
-    });
-    if (ws.isFullscreen) windowEl.addClass('sb-fullscreen');
-    if (ws.isLocked) windowEl.addClass('sb-locked');
+    // ...
+
+    // Dialog vertical resize (drag handle)
+    if (isDialogMode) {
+        const dialogEl = windowEl.data('dialogEl');
+        const handleEl = windowEl.data('handleEl');
+        if (dialogEl && handleEl) {
+            let startY = 0;
+            let startHeight = 0;
+
+            const onMove = (e) => {
+                e.preventDefault();
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                const deltaY = clientY - startY;
+                // Top-anchored: Drag down (positive) = Grow
+                const currentTop = dialogEl.offsetTop;
+                // Allow dragging to bottom but keep handle visible (Subtract 40px handle height)
+                const maxPixels = window.innerHeight - currentTop - 40;
+                const maxVh = (maxPixels / window.innerHeight) * 100;
+
+                const newHeight = Math.min(maxVh, Math.max(20, startHeight + (deltaY / window.innerHeight * 100)));
+                dialogEl.style.height = newHeight + 'vh';
+            };
+
+            // ...
+
+            const onEnd = () => {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onEnd);
+                document.removeEventListener('touchmove', onMove);
+                document.removeEventListener('touchend', onEnd);
+            };
+
+            // Attach events directly to the handle element
+            handleEl.addEventListener('mousedown', (e) => {
+                startY = e.clientY;
+                startHeight = (dialogEl.offsetHeight / window.innerHeight) * 100;
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onEnd);
+            });
+
+            handleEl.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // Stop scrolling immediately
+                startY = e.touches[0].clientY;
+                startHeight = (dialogEl.offsetHeight / window.innerHeight) * 100;
+                document.addEventListener('touchmove', onMove, { passive: false });
+                document.addEventListener('touchend', onEnd);
+            }, { passive: false });
+        }
+    }
 
     // Focus handling
     windowEl.on('mousedown', () => {
@@ -1463,12 +1850,28 @@ function createWindow(category) {
         e.stopPropagation();
         const currentCat = getCategoryById(windowEl.attr('data-id'));
         if (currentCat) currentCat.windowState.isOpen = false;
-        windowEl.remove();
+
+        // If in dialog mode, close the dialog properly
+        const dialogEl = windowEl.data('dialogEl');
+        if (dialogEl) {
+            dialogEl.close();
+            dialogEl.remove();
+        } else {
+            windowEl.remove();
+        }
         saveSettingsDebounced();
     });
 
-    windowEl.find('.sb-fullscreen-btn').on('click', (e) => {
+    let fullscreenDebounce = false;
+    windowEl.find('.sb-fullscreen-btn').on('click touchend', (e) => {
+        e.preventDefault();
         e.stopPropagation();
+
+        // Prevent double-fire from touchend + synthetic click
+        if (fullscreenDebounce) return;
+        fullscreenDebounce = true;
+        setTimeout(() => { fullscreenDebounce = false; }, 300);
+
         const currentCat = getCategoryById(windowEl.attr('data-id'));
         if (!currentCat) return;
         const cws = currentCat.windowState;
@@ -1476,8 +1879,66 @@ function createWindow(category) {
         windowEl.toggleClass('sb-fullscreen');
         cws.isFullscreen = windowEl.hasClass('sb-fullscreen');
         const icon = windowEl.find('.sb-fullscreen-btn');
-        if (cws.isFullscreen) icon.removeClass('fa-expand').addClass('fa-compress');
-        else icon.removeClass('fa-compress').addClass('fa-expand');
+
+        if (cws.isFullscreen) {
+            icon.removeClass('fa-expand').addClass('fa-compress');
+            // Apply fullscreen styles inline using style.cssText with !important
+            const fullscreenStyles = `
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: ${window.innerWidth}px !important;
+                height: ${window.innerHeight}px !important;
+                max-width: none !important;
+                max-height: none !important;
+                min-width: 0 !important;
+                min-height: 0 !important;
+                border-radius: 0 !important;
+                resize: none !important;
+                z-index: 99999 !important;
+            `;
+            windowEl[0].style.cssText = fullscreenStyles;
+
+            // Also apply to dialog wrapper if in dialog mode
+            const dialogEl = windowEl.data('dialogEl');
+            if (dialogEl) {
+                dialogEl.style.cssText = fullscreenStyles;
+            }
+        } else {
+            icon.removeClass('fa-compress').addClass('fa-expand');
+            // Restore normal window styles using style.cssText
+            if (isMobile()) {
+                const baseZ = getDynamicBaseZIndex();
+                windowEl[0].style.cssText = `
+                    position: fixed;
+                    top: 70px;
+                    left: 0;
+                    width: 100vw;
+                    height: 50vh;
+                    z-index: ${baseZ};
+                `;
+                // Also reset dialog wrapper if in dialog mode
+                const dialogEl = windowEl.data('dialogEl');
+                if (dialogEl) {
+                    dialogEl.style.cssText = `
+                        position: fixed;
+                        top: 70px;
+                        left: 0;
+                        width: 100vw;
+                        height: 50vh;
+                        margin: 0;
+                        padding: 0;
+                        border: none;
+                        max-width: 100vw;
+                        max-height: 100vh;
+                        z-index: ${baseZ};
+                    `;
+                }
+            } else {
+                // Clear inline styles on desktop to restore CSS defaults
+                windowEl[0].style.cssText = '';
+            }
+        }
 
         focusWindow(windowEl); // Re-apply z-index logic for fullscreen
         saveSettingsDebounced();
@@ -1556,6 +2017,14 @@ function createWindow(category) {
             btn.css({ 'opacity': '0.5', 'color': '' });
         }
         saveSettingsDebounced();
+    });
+
+    // Sidebar Collapse Toggle (hamburger button)
+    windowEl.find('.sb-sidebar-collapse-btn').on('click', function (e) {
+        e.stopPropagation();
+        const sidebar = windowEl.find('.sb-sidebar');
+        sidebar.toggleClass('sb-collapsed');
+        $(this).toggleClass('fa-bars fa-chevron-right');
     });
 
     // Formatting Toolbar
@@ -1645,33 +2114,120 @@ function createWindow(category) {
     });
 
     // Drag Implementation
+    // Drag Implementation
     const header = windowEl.find('.sb-header');
-    let isDragging = false;
-    let dragOffsetX = 0;
-    let dragOffsetY = 0;
+    let startDragX = 0;
+    let startDragY = 0;
+    let startDragHeight = 0;
 
-    header.on('mousedown', (e) => {
-        if ($(e.target).hasClass('sb-control-btn') || $(e.target).closest('.sb-title').length) return;
-        const currentCat = getCategoryById(windowEl.attr('data-id'));
-        if (currentCat?.windowState?.isLocked) return;
-        isDragging = true;
-        dragOffsetX = e.clientX - windowEl.offset().left;
-        dragOffsetY = e.clientY - windowEl.offset().top;
-        header.css('cursor', 'grabbing');
-    });
+    // Function to handle drag move
+    let dragTicking = false;
+    const performWindowDrag = (e) => {
+        if (dragTicking) return;
+        dragTicking = true;
 
-    $(document).on('mousemove', (e) => {
-        if (!isDragging) return;
-        windowEl.css({
-            left: e.clientX - dragOffsetX,
-            top: e.clientY - dragOffsetY
+        requestAnimationFrame(() => {
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+            if (isDialogMode) {
+                const dialogEl = windowEl.data('dialogEl');
+                if (dialogEl) {
+                    const settings = extension_settings[MODULE_NAME];
+                    const enforceTop = settings.enforceTopBoundary !== false;
+                    const enforceBottom = settings.enforceBottomBoundary !== false;
+
+                    const newTop = clientY - startDragY;
+                    const topLimit = enforceTop ? (settings.topBoundaryOffset || 70) : 0;
+                    const bottomLimit = enforceBottom ? (window.innerHeight - (settings.bottomBoundaryOffset || 50)) : window.innerHeight;
+
+                    let constrainedTop = newTop;
+                    if (enforceTop) constrainedTop = Math.max(topLimit, constrainedTop);
+                    if (enforceBottom) constrainedTop = Math.min(bottomLimit, constrainedTop);
+
+                    // If not enforced, we still probably want to keep it somewhat on screen? 
+                    // But let's respect the user's wish to disable limits.
+                    // However, we should prevent losing it entirely.
+
+                    dialogEl.style.top = constrainedTop + 'px';
+                }
+            } else {
+                const settings = extension_settings[MODULE_NAME];
+                const newTop = clientY - startDragY;
+                let newLeft = clientX - startDragX;
+
+                // Side Clamping
+                const enforceLeft = settings.enforceLeftBoundary !== false;
+                const enforceRight = settings.enforceRightBoundary !== false;
+                if (enforceLeft || enforceRight) {
+                    const width = windowEl.outerWidth();
+                    const leftOff = settings.leftBoundaryOffset || 0;
+                    const rightOff = settings.rightBoundaryOffset || 0;
+                    if (enforceLeft) newLeft = Math.max(leftOff, newLeft);
+                    if (enforceRight) newLeft = Math.min(window.innerWidth - width - rightOff, newLeft);
+                }
+
+                const chatBuffer = settings.bottomBoundaryOffset || 50;
+                const topBarHeight = settings.topBoundaryOffset || 70;
+                const minH = 350;
+                const maxBottom = window.innerHeight - chatBuffer;
+
+                // 1. Calculate Theoretical Top and Bottom
+                let finalTop = newTop;
+
+
+                const enforceTop = settings.enforceTopBoundary !== false;
+                const enforceBottom = settings.enforceBottomBoundary !== false;
+
+                // 2. Enforce Top Barrier (ST Bar)
+                if (enforceTop) {
+                    finalTop = Math.max(topBarHeight, finalTop);
+                }
+
+                // 3. Enforce Bottom Barrier (Chat Bar) with Resize Logic
+                let finalHeight = startDragHeight;
+
+                if (enforceBottom) {
+                    // If the window at current height would go below maxBottom, we shrink it.
+                    let impliedBottom = finalTop + startDragHeight;
+
+                    if (impliedBottom > maxBottom) {
+                        // We need to shrink
+                        let constrainedHeight = maxBottom - finalTop;
+
+                        if (constrainedHeight < minH) {
+                            // Cannot shrink further. Window stops moving down.
+                            constrainedHeight = minH;
+                            // Force top to be at maxBottom - minHeight
+                            finalTop = maxBottom - minH;
+                            // BUT, we still must respect top barrier if enabled!
+                            if (enforceTop && finalTop < topBarHeight) {
+                                finalTop = topBarHeight;
+                                // If we are squished between Top (70) and Bottom (Chat), height is what remains
+                                constrainedHeight = Math.max(minH, maxBottom - topBarHeight);
+                            }
+                        }
+                        finalHeight = constrainedHeight;
+                    }
+                }
+
+                windowEl.css({
+                    left: newLeft,
+                    top: finalTop,
+                    height: finalHeight
+                });
+            }
+            dragTicking = false;
         });
-    });
+    };
 
-    $(document).on('mouseup', () => {
-        if (isDragging) {
-            isDragging = false;
-            header.css('cursor', 'grab');
+    // Function to stop drag
+    const stopWindowDrag = () => {
+        $(document).off('mousemove touchmove', performWindowDrag);
+        $(document).off('mouseup touchend', stopWindowDrag);
+        header.css('cursor', 'grab');
+
+        if (!isDialogMode) {
             const currentCat = getCategoryById(windowEl.attr('data-id'));
             if (currentCat) {
                 currentCat.windowState.top = windowEl.css('top');
@@ -1679,17 +2235,69 @@ function createWindow(category) {
             }
             saveSettingsDebounced();
         }
-    });
+    };
+
+    const initWindowDrag = (e) => {
+        // if (isMobile() && !isDialogMode) return; // Removed to allow drag
+        if ($(e.target).hasClass('sb-control-btn') || $(e.target).closest('.sb-title').length) return;
+
+        const currentCat = getCategoryById(windowEl.attr('data-id'));
+        if (currentCat?.windowState?.isLocked) return;
+
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        if (isDialogMode) {
+            const dialogEl = windowEl.data('dialogEl');
+            const rect = dialogEl.getBoundingClientRect();
+            startDragY = clientY - rect.top;
+        } else {
+            startDragX = clientX - windowEl.offset().left;
+            startDragY = clientY - windowEl.offset().top;
+        }
+        startDragHeight = windowEl.outerHeight();
+
+        header.css('cursor', 'grabbing');
+
+        // Attach document listeners only during drag
+        $(document).on('mousemove touchmove', performWindowDrag);
+        $(document).on('mouseup touchend', stopWindowDrag);
+    };
+
+    header.on('mousedown touchstart', initWindowDrag);
 
     // Resize tracking
+    let resizeTicking = false;
     const observer = new ResizeObserver(() => {
-        if (windowEl.hasClass('sb-fullscreen')) return;
-        const currentCat = getCategoryById(windowEl.attr('data-id'));
-        if (currentCat) {
-            currentCat.windowState.width = windowEl.css('width');
-            currentCat.windowState.height = windowEl.css('height');
-        }
-        saveSettingsDebounced();
+        if (resizeTicking) return;
+        resizeTicking = true;
+
+        requestAnimationFrame(() => {
+            if (windowEl.hasClass('sb-fullscreen')) {
+                resizeTicking = false;
+                return;
+            }
+            const currentCat = getCategoryById(windowEl.attr('data-id'));
+            if (currentCat) {
+                currentCat.windowState.width = windowEl.css('width');
+                currentCat.windowState.height = windowEl.css('height');
+            }
+
+            // Proportional Scaling (User Requested)
+            // Base width for 100% scale is ~600px.
+            // Scale = (Current Width / 600) * UserPreference
+            const width = windowEl.width();
+            const settings = extension_settings[MODULE_NAME];
+            const baseScale = settings.fontScale || 1.0;
+            const referenceWidth = 600;
+            // Clamp scale between 0.4 and 1.5 to avoid too small/big text
+            const newScale = Math.min(1.5, Math.max(0.4, (width / referenceWidth) * baseScale));
+
+            windowEl.css('--sb-font-scale', newScale + 'em');
+
+            saveSettingsDebounced();
+            resizeTicking = false;
+        });
     });
     observer.observe(windowEl[0]);
 
@@ -1741,27 +2349,11 @@ function getDynamicBaseZIndex() {
     // Check Preference
     const settings = extension_settings[MODULE_NAME];
     if (settings.alwaysOnTop === false) {
-        return 2100; // Static "Under Drawer" mode
+        return 100; // Low enough to go behind ST panels (~1000+)
     }
 
-    // Refining targets to be specific to the Right Drawer (Character Card)
-    // Removing #top-bar as it likely caused the "Above Everything" issue
-    /* 
-    const targets = [
-        '#right-nav-panel',     // Primary target
-        '#rm_char_block',       // Specific char block
-        '.right-drawer'         // Generic right drawer class
-    ];
-    */
-
-    // Fallback: 3000
-    // Logic: 2500 was "Under Char Card", 9500 was "Above Settings".
-    // So the Char Card is likely ~2600-3000.
-    // User verified Char Card Z is 3000.
-    // Fallback: 3000 (Resulting in 3001) if detection fails or is equal.
-
-    // User Request: Force 3003. No dynamic calculation.
-    return 3003;
+    // On top of ST panels but not excessively high
+    return 3010;
 }
 
 function clampWindowsToViewport() {
@@ -1779,13 +2371,37 @@ function clampWindowsToViewport() {
         let height = win.outerHeight();
         let changed = false;
 
+        const settings = extension_settings[MODULE_NAME];
+        const enforceTop = settings.enforceTopBoundary !== false;
+        const enforceBottom = settings.enforceBottomBoundary !== false;
+
         // Clamp positions
         if (left + width > vw) {
             left = Math.max(0, vw - width);
             changed = true;
         }
-        if (top + height > vh) {
-            top = Math.max(0, vh - height);
+        if (left < 0) { // Keep left on screen
+            left = 0;
+            changed = true;
+        }
+
+        if (enforceBottom && top + height > vh) {
+            // Allow pushing down, but maybe not fully offscreen? 
+            // Logic here was "don't go below bottom". 
+            // If enforceTop is also true, we might squish, but here we only change TOP.
+            // clampWindowsToViewport doesn't resize height usually.
+            // So we just push it up.
+            top = Math.max(enforceTop ? 70 : 0, vh - height);
+            changed = true;
+        }
+
+        if (enforceTop && top < 70) { // Enforce min top
+            top = 70;
+            changed = true;
+        } else if (!enforceTop && top < 0) {
+            // Even if not strict, don't lose it entirely off top? 
+            // Let's keep at least 0.
+            top = 0;
             changed = true;
         }
 
@@ -1808,6 +2424,7 @@ function clampWindowsToViewport() {
 }
 
 function focusWindow(windowEl) {
+    const settings = extension_settings[MODULE_NAME];
     const baseZ = getDynamicBaseZIndex();
 
     $('.sb-container').each(function () {
@@ -1819,7 +2436,8 @@ function focusWindow(windowEl) {
         if (isFS) {
             z = isActive ? 60010 : 60000;
         } else {
-            // Normal mode: Dynamic Base + 10 for active, Base for inactive
+            // Respect "Always On Top" setting
+            // Always use baseZ which now correctly returns 2100 if disabled, 3003 if enabled
             z = isActive ? (baseZ + 10) : baseZ;
         }
 
@@ -1832,29 +2450,60 @@ async function init() {
     try {
         loadSettings();
         await settingsLoaded();
-        const settings = extension_settings[MODULE_NAME];
-        settings.categories.forEach(cat => {
-            if (cat.windowState && cat.windowState.isOpen) {
-                if (settings.isEnabled) {
-                    createWindow(cat);
-                }
-            }
-        });
 
-        if (settings.isEnabled) {
-            applyStyles(); // Apply global transparency/font styles
-            if ($('#spell-book-button').length === 0) {
-                const menuButton = $(`<div id="spell-book-button" class="list-group-item flex-container" title="Toggle The Spell Book"><i class="fa-solid fa-hat-wizard" style="margin-right:5px"></i> The Spell Book</div>`);
-                menuButton.on('click', toggleSpellBook);
-                const menuSelectors = ['#extensionsMenu', '#extensionsMenuContent', '.extensionsMenu'];
-                for (const selector of menuSelectors) {
-                    if ($(selector).length > 0) {
-                        $(selector).append(menuButton);
-                        break;
+        // Delay initialization to allow ST UI to settle
+        setTimeout(() => {
+            const settings = extension_settings[MODULE_NAME];
+            settings.categories.forEach(cat => {
+                if (cat.windowState && cat.windowState.isOpen) {
+                    if (settings.isEnabled) {
+                        // Double check if already exists before calling
+                        if ($(`.sb-container[data-id="${cat.id}"]`).length === 0) {
+                            createWindow(cat);
+                        }
+                    }
+                }
+            });
+
+            // Mobile: Reset window positions to top of screen on reload
+            // Delay slightly to ensure windows are fully rendered
+            setTimeout(() => {
+                if (isMobile()) {
+                    const settings = extension_settings[MODULE_NAME];
+                    const baseZ = getDynamicBaseZIndex();
+
+                    $('.sb-container').each(function () {
+                        const win = $(this);
+                        if (!win.hasClass('sb-fullscreen')) {
+                            // Use style.cssText - jQuery .css() doesn't work reliably on ST mobile
+                            win[0].style.cssText = `
+                                position: fixed;
+                                top: 70px;
+                                left: 0;
+                                width: 100vw;
+                                height: 50vh;
+                                z-index: ${baseZ};
+                            `;
+                        }
+                    });
+                }
+            }, 200);
+
+            if (settings.isEnabled) {
+                setTimeout(applyStyles, 100); // Final delay to ensure Z-indexes apply to everything
+                if ($('#spell-book-button').length === 0) {
+                    const menuButton = $(`<div id="spell-book-button" class="list-group-item flex-container" title="Toggle The Spell Book"><i class="fa-solid fa-hat-wizard"></i>The Spell Book</div>`);
+                    menuButton.on('click', toggleSpellBook);
+                    const menuSelectors = ['#extensionsMenu', '#extensionsMenuContent', '.extensionsMenu'];
+                    for (const selector of menuSelectors) {
+                        if ($(selector).length > 0) {
+                            $(selector).append(menuButton);
+                            break;
+                        }
                     }
                 }
             }
-        }
+        }, 1500);
 
         // Attach Resize Listener immediately
         $(window).on('resize', () => {
@@ -1953,14 +2602,209 @@ export async function settingsLoaded() {
     alwaysOnTopToggle.prop('checked', extension_settings[MODULE_NAME].alwaysOnTop !== false);
     alwaysOnTopToggle.on('change', function () {
         extension_settings[MODULE_NAME].alwaysOnTop = $(this).prop('checked');
-        // Force re-focus to apply new Z-index immediately
         $('.sb-container').each(function () { focusWindow($(this)); });
+        saveSettingsDebounced();
+    });
+
+    const enforceTopToggle = settingsPage.find('#sb-enforce-top-toggle');
+    const topOffsetInput = settingsPage.find('#sb-top-offset');
+    topOffsetInput.val(extension_settings[MODULE_NAME].topBoundaryOffset || 70);
+    enforceTopToggle.prop('checked', extension_settings[MODULE_NAME].enforceTopBoundary !== false);
+    enforceTopToggle.on('change', function () {
+        extension_settings[MODULE_NAME].enforceTopBoundary = $(this).prop('checked');
+        saveSettingsDebounced();
+    });
+    topOffsetInput.on('change', function () {
+        extension_settings[MODULE_NAME].topBoundaryOffset = parseInt($(this).val()) || 70;
+        saveSettingsDebounced();
+    });
+
+    const enforceBottomToggle = settingsPage.find('#sb-enforce-bottom-toggle');
+    const bottomOffsetInput = settingsPage.find('#sb-bottom-offset');
+    bottomOffsetInput.val(extension_settings[MODULE_NAME].bottomBoundaryOffset || 50);
+    enforceBottomToggle.prop('checked', extension_settings[MODULE_NAME].enforceBottomBoundary !== false);
+    enforceBottomToggle.on('change', function () {
+        extension_settings[MODULE_NAME].enforceBottomBoundary = $(this).prop('checked');
+        saveSettingsDebounced();
+    });
+    bottomOffsetInput.on('change', function () {
+        extension_settings[MODULE_NAME].bottomBoundaryOffset = parseInt($(this).val()) || 50;
+        saveSettingsDebounced();
+    });
+
+    const enforceLeftToggle = settingsPage.find('#sb-enforce-left-toggle');
+    const leftOffsetInput = settingsPage.find('#sb-left-offset');
+    leftOffsetInput.val(extension_settings[MODULE_NAME].leftBoundaryOffset || 0);
+    enforceLeftToggle.prop('checked', extension_settings[MODULE_NAME].enforceLeftBoundary !== false);
+    enforceLeftToggle.on('change', function () {
+        extension_settings[MODULE_NAME].enforceLeftBoundary = $(this).prop('checked');
+        saveSettingsDebounced();
+    });
+    leftOffsetInput.on('change', function () {
+        extension_settings[MODULE_NAME].leftBoundaryOffset = parseInt($(this).val()) || 0;
+        saveSettingsDebounced();
+    });
+
+    const enforceRightToggle = settingsPage.find('#sb-enforce-right-toggle');
+    const rightOffsetInput = settingsPage.find('#sb-right-offset');
+    rightOffsetInput.val(extension_settings[MODULE_NAME].rightBoundaryOffset || 0);
+    enforceRightToggle.prop('checked', extension_settings[MODULE_NAME].enforceRightBoundary !== false);
+    enforceRightToggle.on('change', function () {
+        extension_settings[MODULE_NAME].enforceRightBoundary = $(this).prop('checked');
+        saveSettingsDebounced();
+    });
+    rightOffsetInput.on('change', function () {
+        extension_settings[MODULE_NAME].rightBoundaryOffset = parseInt($(this).val()) || 0;
+        saveSettingsDebounced();
+    });
+
+
+    // Font Scale
+    const fontScaleSlider = settingsPage.find('#sb-font-scale');
+    const fontScaleValue = settingsPage.find('#sb-font-scale-value');
+    fontScaleSlider.val(extension_settings[MODULE_NAME].fontScale || 1.0);
+    fontScaleValue.text(Math.round((extension_settings[MODULE_NAME].fontScale || 1.0) * 100) + '%');
+    fontScaleSlider.on('input', function () {
+        const val = parseFloat($(this).val());
+        extension_settings[MODULE_NAME].fontScale = val;
+        fontScaleValue.text(Math.round(val * 100) + '%');
+        applyStyles();
+        saveSettingsDebounced();
+    });
+
+    // Opacity
+    const opacitySlider = settingsPage.find('#sb-opacity');
+    const opacityValue = settingsPage.find('#sb-opacity-value');
+    opacitySlider.val(extension_settings[MODULE_NAME].opacity || 0.85);
+    opacityValue.text(Math.round((extension_settings[MODULE_NAME].opacity || 0.85) * 100) + '%');
+    opacitySlider.on('input', function () {
+        const val = parseFloat($(this).val());
+        extension_settings[MODULE_NAME].opacity = val;
+        opacityValue.text(Math.round(val * 100) + '%');
+        applyStyles();
+        saveSettingsDebounced();
+    });
+
+    // Book Mode
+    const bookModeToggle = settingsPage.find('#sb-book-mode-toggle');
+    bookModeToggle.prop('checked', extension_settings[MODULE_NAME].bookModeEnabled !== false);
+    bookModeToggle.on('change', function () {
+        extension_settings[MODULE_NAME].bookModeEnabled = $(this).prop('checked');
+        renderAllOpenWindows();
+        saveSettingsDebounced();
+    });
+
+    // Page Flip Animation
+    const pageFlipToggle = settingsPage.find('#sb-page-flip-toggle');
+    const flipSettingsExt = settingsPage.find('#sb-flip-settings-ext');
+    const flipStyleSelect = settingsPage.find('#sb-flip-style');
+    pageFlipToggle.prop('checked', extension_settings[MODULE_NAME].pageFlipAnimation !== false);
+    flipSettingsExt.toggle(extension_settings[MODULE_NAME].pageFlipAnimation !== false);
+    flipStyleSelect.val(extension_settings[MODULE_NAME].pageFlipStyle || 'flip');
+    pageFlipToggle.on('change', function () {
+        extension_settings[MODULE_NAME].pageFlipAnimation = $(this).prop('checked');
+        flipSettingsExt.toggle($(this).prop('checked'));
+        saveSettingsDebounced();
+    });
+    flipStyleSelect.on('change', function () {
+        extension_settings[MODULE_NAME].pageFlipStyle = $(this).val();
+        saveSettingsDebounced();
+    });
+
+    const flipSpeedInput = settingsPage.find('#sb-flip-speed');
+    flipSpeedInput.val(extension_settings[MODULE_NAME].pageFlipSpeed || 0.2);
+    flipSpeedInput.on('change', function () {
+        extension_settings[MODULE_NAME].pageFlipSpeed = parseFloat($(this).val()) || 0.2;
+        saveSettingsDebounced();
+    });
+
+    // Auto-Paginate
+    const autoPaginateToggle = settingsPage.find('#sb-auto-paginate-toggle');
+    const paginateSettingsExt = settingsPage.find('#sb-paginate-settings-ext');
+    const paginateLimitInput = settingsPage.find('#sb-paginate-limit');
+    autoPaginateToggle.prop('checked', extension_settings[MODULE_NAME].autoPaginate === true);
+    paginateSettingsExt.toggle(extension_settings[MODULE_NAME].autoPaginate === true);
+    paginateLimitInput.val(extension_settings[MODULE_NAME].paginateLimit || 3000);
+    autoPaginateToggle.on('change', function () {
+        extension_settings[MODULE_NAME].autoPaginate = $(this).prop('checked');
+        paginateSettingsExt.toggle($(this).prop('checked'));
+        if ($(this).prop('checked')) applyAutoPaginationToOpenWindows();
+        saveSettingsDebounced();
+    });
+    paginateLimitInput.on('change', function () {
+        extension_settings[MODULE_NAME].paginateLimit = parseInt($(this).val()) || 3000;
+        if (extension_settings[MODULE_NAME].autoPaginate) applyAutoPaginationToOpenWindows();
         saveSettingsDebounced();
     });
 
     $('#extensions_settings').append(settingsPage);
 }
 
+// Image Optimization Logic
+function handleImagePaste(e) {
+    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+    let blob = null;
+    for (const item of items) {
+        if (item.type.indexOf('image') === 0) {
+            blob = item.getAsFile();
+            break;
+        }
+    }
+    if (!blob) return;
+
+    e.preventDefault();
+    toastr.info('Processing image...');
+
+    // Helper to insert text
+    const insertAtCursor = (editor, text) => {
+        const start = editor.selectionStart;
+        const end = editor.selectionEnd;
+        const val = editor.value;
+        editor.value = val.substring(0, start) + text + val.substring(end);
+        editor.selectionStart = editor.selectionEnd = start + text.length;
+        $(editor).trigger('input');
+    };
+
+    // If small GIF/Image (< 500KB), paste as is (Base64) to preserve animation/quality
+    if (blob.size < 500 * 1024) {
+        const reader = new FileReader();
+        reader.onload = (re) => insertAtCursor(e.target, `![image](${re.target.result})`);
+        reader.readAsDataURL(blob);
+        return;
+    }
+
+    // Optimize large images to prevent crashes
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const maxDim = 800; // Limit to 800px max dimension
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxDim || height > maxDim) {
+            const scale = maxDim / Math.max(width, height);
+            width *= scale;
+            height *= scale;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Compress to WebP 0.7 quality
+        const dataUrl = canvas.toDataURL('image/webp', 0.7);
+        insertAtCursor(e.target, `![optimized](${dataUrl})`);
+
+        URL.revokeObjectURL(url);
+        toastr.success('Image optimized!');
+    };
+    img.src = url;
+}
+
 jQuery(async () => {
+    // Attach Global Paste Listener for Images
+    $(document).on('paste', '.sb-editor', handleImagePaste);
     await init();
 });

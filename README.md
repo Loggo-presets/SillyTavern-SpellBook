@@ -13,6 +13,7 @@ A feature-rich, glassmorphism-style floating notepad extension. Organize your no
 ### 🎨 Customization  
 - **Per-Category Backgrounds**: Set custom background images with blur and positioning
 - **Per-Window Lock**: Lock individual windows to prevent accidental moving/resizing
+- **Screen Boundaries**: Enforce Top, Bottom, Left, and Right limits with custom pixel offsets.
 - **Theme Color Override**: Match your SillyTavern theme or set custom accent colors
 - **Font Scale**: Adjust text size from 70% to 130%
 - **Window Transparency**: Fine-tune the glassmorphism opacity
@@ -28,6 +29,11 @@ A feature-rich, glassmorphism-style floating notepad extension. Organize your no
 - **Move Entries**: Transfer entries between categories with one click
 - **Entry Icons**: Assign Font Awesome icons to entries for easy identification
 - **Full Markdown**: Headers, lists, code blocks, checkboxes, images, and more
+
+### 📱 Mobile Experience
+- **Native-like Feel**: Uses optimized dialogs for proper layering over chat
+- **Performance Mode**: Smart optimizations for background images and animations to save battery and reduce lag
+- **Touch Friendly**: Dedicated drag handles and auto-collapsing menus
 
 ## 🚀 Installation
 
@@ -45,4 +51,4 @@ A feature-rich, glassmorphism-style floating notepad extension. Organize your no
 
 ---
 
-Designed with ❤️ by Loggo for the SillyTavern community.
+Designed with ❤️ by Loggo for the SillyTavern and AI Preset Community.
