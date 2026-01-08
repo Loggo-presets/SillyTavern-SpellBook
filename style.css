@@ -910,7 +910,9 @@
 }
 
 #spell-book-button i {
-    margin-right: 10px;
+    width: 1em;
+    text-align: center;
+    margin-right: 5px;
 }
 
 /* Custom Modal */
