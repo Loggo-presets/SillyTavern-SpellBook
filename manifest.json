@@ -1,0 +1,12 @@
+{
+    "display_name": "Spell Book",
+    "loading_order": 10,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Loggo",
+    "version": "2.1.0",
+    "minimum_client_version": "1.10.0",
+    "description": "A premium, multi-category Markdown notepad with glassmorphism styling, page animations, custom backgrounds, keyboard shortcuts, and more."
+}

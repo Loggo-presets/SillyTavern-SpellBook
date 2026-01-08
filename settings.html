@@ -1,0 +1,81 @@
+<div class="inline-drawer">
+    <div class="inline-drawer-toggle inline-drawer-header">
+        <b>The Spell Book</b>
+        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+    </div>
+    <div class="inline-drawer-content">
+        <div class="sb-settings-section" style="margin-bottom: 15px;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <label style="font-weight: 600; cursor: pointer;" for="sb-enable-toggle">Enable Extension</label>
+                <input type="checkbox" id="sb-enable-toggle" style="cursor: pointer;">
+            </div>
+            <small style="display: block; margin-top: 4px; opacity: 0.7;">
+                Toggle the entire extension on or off.
+            </small>
+        </div>
+        <div class="sb-settings-section" style="margin-bottom: 15px;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <label style="font-weight: 600; cursor: pointer;" for="sb-always-on-top-toggle">Always On Top (Force
+                    3003)</label>
+                <input type="checkbox" id="sb-always-on-top-toggle" style="cursor: pointer;">
+            </div>
+            <small style="display: block; margin-top: 4px; opacity: 0.7;">
+                If enabled, floats above character cards (Z=3003). If disabled, standard layering.
+            </small>
+        </div>
+        <div class="sb-settings-section" style="margin-bottom: 15px;">
+            <label style="font-weight: 600; margin-bottom: 4px; display: block;">Default Category</label>
+            <select id="sb-default-cat-select" class="text_pole" style="width: 100%;">
+                <!-- Populated by JS -->
+            </select>
+            <small style="display: block; margin-top: 4px; opacity: 0.7;">
+                Select which category opens when you launch The Spell Book.
+            </small>
+        </div>
+        <div class="sb-settings-section" style="margin-bottom: 15px;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <label style="font-weight: 600;">Theme Color</label>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <span id="sb-theme-reset"
+                        style="font-size: 0.75rem; opacity: 0.7; cursor: pointer; text-decoration: underline;">Reset</span>
+                    <input type="color" id="sb-theme-color-picker" style="cursor: pointer; height: 24px; width: 40px;">
+                </div>
+            </div>
+            <small style="display: block; margin-top: 4px; opacity: 0.7;">
+                Override the interface color.
+            </small>
+        </div>
+        <hr style="border: none; border-top: 1px solid var(--SmartThemeBorderColor); margin: 15px 0;">
+        <div class="sb-settings-section" style="margin-bottom: 15px;">
+            <label style="font-weight: 600; margin-bottom: 8px; display: block;">Category Shortcuts</label>
+            <div id="sb-shortcut-list">
+                <!-- Populated by JS -->
+            </div>
+            <small style="display: block; margin-top: 8px; opacity: 0.7;">
+                Click input and press keys to bind.
+            </small>
+        </div>
+        <hr style="border: none; border-top: 1px solid var(--SmartThemeBorderColor); margin: 15px 0;">
+        <div class="sb-settings-section" style="margin-bottom: 15px;">
+            <label style="font-weight: 600; margin-bottom: 8px; display: block;">Data Backup</label>
+            <small style="display: block; margin-bottom: 10px; opacity: 0.7;">
+                Your spells are saved in SillyTavern's settings. Export to create a backup file that won't be lost.
+            </small>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <div id="spell-book-export-btn" class="menu_button">
+                    <i class="fa-solid fa-download"></i> Export
+                </div>
+                <div id="spell-book-import-btn" class="menu_button">
+                    <i class="fa-solid fa-upload"></i> Import
+                </div>
+            </div>
+        </div>
+        <hr style="border: none; border-top: 1px solid var(--SmartThemeBorderColor); margin: 15px 0;">
+        <div class="sb-settings-section">
+            <label style="font-weight: 600; margin-bottom: 8px; display: block;">Danger Zone</label>
+            <div id="spell-book-reset" class="menu_button">
+                <i class="fa-solid fa-trash"></i> Reset to Defaults
+            </div>
+        </div>
+    </div>
+</div>
