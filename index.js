@@ -53,7 +53,8 @@ const defaultSettings = {
     rightBoundaryOffset: 0,
     mobileInlineMode: false,
     edgeResizing: true,
-    doubleClickToEdit: false
+    doubleClickToEdit: false,
+    contentScale: 1.0
 };
 
 const bgCache = new Map(); // Cache optimized backgrounds
@@ -283,7 +284,7 @@ function applyStyles() {
 
     const root = document.documentElement;
     root.style.setProperty('--sb-opacity', opacity);
-    root.style.setProperty('--sb-font-scale', fontScale);
+    // --sb-font-size is set below in the Font Size section
     root.style.setProperty('--sb-flip-speed', (settings.pageFlipSpeed || 0.4) + 's');
 
     // Font Size (backward compat or legacy if any)
@@ -315,6 +316,8 @@ function applyStyles() {
         const isFS = win.hasClass('sb-fullscreen');
         const isActive = win.hasClass('sb-focus');
 
+        updateWindowFontScale(win);
+
         if (isFS) {
             win.css('zIndex', isActive ? 60010 : 60000);
         } else {
@@ -324,6 +327,51 @@ function applyStyles() {
     });
 
     saveSettingsDebounced();
+}
+
+function updateWindowFontScale(windowEl) {
+    if (!windowEl || !windowEl.length) return;
+    // If fullscreen, don't scale based on width? Or just use width? 
+    // Usually fullscreen wants standard size, but let's stick to width logic for now or cap it.
+    // Fullscreen width is large, so font might get huge. The observer had a check for 'sb-fullscreen'.
+
+    if (windowEl.hasClass('sb-fullscreen')) {
+        // Use default formatted size or just 1.0 * preference?
+        // Logic in observer was: if fullscreen, resizeTicking=false; return;
+        // This implies fullscreen does NOT update font scale dynamically?
+        // If so, it retains whatever scale it had OR we should set a reasonable default.
+        // Let's assume standard scale for FS.
+        const settings = extension_settings[MODULE_NAME];
+        const baseScale = settings.fontScale || 1.0;
+        // In fullscreen 1rem is usually good.
+        // But if user wants bigger/smaller, we honor fontScale.
+        // baseSize (0.9) * fontScale basically. 
+        // But wait, the inline style overrides root. 
+        // If we don't update inline style in FS, it keeps old value.
+        // We should probably set it to standard.
+        // Let's set it to exactly what root uses: 0.9 * fontScale
+        // But root uses 0.9. This function sets 'rem' directly.
+        // The inline var is --sb-font-size.
+        // If we remove inline style, it falls back to root (which is 0.9 * fontScale).
+        windowEl.css('--sb-font-size', '');
+        return;
+    }
+
+    const width = windowEl.width();
+    const settings = extension_settings[MODULE_NAME];
+    const baseScale = settings.fontScale || 1.0;
+    const referenceWidth = 600;
+    // Clamp scale between 0.4 and 1.5 to avoid too small/big text
+    const newScale = Math.min(1.5, Math.max(0.4, (width / referenceWidth) * baseScale));
+
+    windowEl.css('--sb-font-size', newScale + 'rem');
+}
+
+function updateContentFontScale(windowEl) {
+    if (!windowEl || !windowEl.length) return;
+    const settings = extension_settings[MODULE_NAME];
+    const scale = settings.contentScale || 1.0;
+    windowEl.css('--sb-content-scale', scale);
 }
 
 function resetSettings() {
@@ -437,6 +485,7 @@ async function updateContentUI(windowEl, category) {
                     <div class="sb-handle-pill"></div>
                 </div>
                 <div class="sb-pagination-actions">
+                    <i class="fa-solid fa-text-height sb-page-action sb-font-size-btn" title="Content Font Size" style="cursor: pointer; opacity: 0.7;"></i>
                     <i class="fa-solid fa-plus sb-page-add" title="Add Page to Entry"></i>
                     <i class="fa-solid fa-trash sb-page-del" title="Delete current page"></i>
                 </div>
@@ -1808,14 +1857,15 @@ function createWindow(category) {
             // Desktop: Apply saved position from windowState
             const baseZ = getDynamicBaseZIndex();
             windowEl.css({
-                position: 'fixed',
                 top: ws.top || '100px',
                 left: ws.left || '100px',
-                width: ws.width || '650px',
-                height: ws.height || '550px',
+                width: ws.width || '600px',
+                height: ws.height || '500px',
                 zIndex: baseZ
             });
+            if (ws.isFullscreen) windowEl.addClass('sb-fullscreen');
         }
+        updateContentFontScale(windowEl);
     }
 
     const sidebar = windowEl.find('.sb-sidebar');
@@ -2068,6 +2118,60 @@ function createWindow(category) {
             btn.css({ 'opacity': '0.5', 'color': '' });
         }
         saveSettingsDebounced();
+    });
+
+    // Content Font Size Custom Input (Delegated)
+    windowEl.on('click', '.sb-font-size-btn', function (e) {
+        e.stopPropagation();
+        const btn = $(this);
+        const settings = extension_settings[MODULE_NAME];
+        const currentScale = settings.contentScale || 1.0;
+
+        // Create inline input replacing the icon
+        // Show as percentage for user friendliness (1.2 -> 120)
+        const currentVal = Math.round(currentScale * 100);
+        const input = $(`<input type="number" class="sb-inline-input" style="width: 50px; padding: 2px; text-align: center; height: auto;" value="${currentVal}">`);
+
+        btn.replaceWith(input);
+        input.focus().select();
+
+        const finish = () => {
+            let val = parseInt(input.val());
+            if (isNaN(val) || val <= 10) val = 100; // Default if invalid or too small
+            // Clamp reasonable values
+            val = Math.max(30, Math.min(500, val));
+
+            settings.contentScale = val / 100;
+
+            // Update all open windows
+            $('.sb-container').each(function () {
+                updateContentFontScale($(this));
+            });
+            saveSettingsDebounced();
+
+            // Restore button by re-rendering this window's footer (easier) implies updateContentUI
+            // But updateContentUI re-renders content which might be heavy.
+            // We can just replace input back with button if we want to be lightweight.
+            // But to match exactly 'renderFullUI' style, we can validly re-render UI.
+            // Let's just swap back manually to avoid content redraw scroll jump.
+
+            // Actually, re-rendering just the footer is best. 
+            // But footer is inside updateContentUI.
+            // Replacing back is fine.
+            const newBtn = $(`<i class="fa-solid fa-text-height sb-page-action sb-font-size-btn" title="Content Font Size" style="cursor: pointer; opacity: 0.7;"></i>`);
+            input.replaceWith(newBtn);
+        };
+
+        input.on('blur', finish);
+        input.on('keydown', (e) => {
+            if (e.key === 'Enter') {
+                input.blur(); // Triggers finish via blur
+            }
+            if (e.key === 'Escape') {
+                input.val(currentVal);
+                input.blur();
+            }
+        });
     });
 
     // Sidebar Collapse Toggle (hamburger button)
@@ -2350,17 +2454,7 @@ function createWindow(category) {
                 currentCat.windowState.height = windowEl.css('height');
             }
 
-            // Proportional Scaling (User Requested)
-            // Base width for 100% scale is ~600px.
-            // Scale = (Current Width / 600) * UserPreference
-            const width = windowEl.width();
-            const settings = extension_settings[MODULE_NAME];
-            const baseScale = settings.fontScale || 1.0;
-            const referenceWidth = 600;
-            // Clamp scale between 0.4 and 1.5 to avoid too small/big text
-            const newScale = Math.min(1.5, Math.max(0.4, (width / referenceWidth) * baseScale));
-
-            windowEl.css('--sb-font-scale', newScale + 'em');
+            updateWindowFontScale(windowEl);
 
             saveSettingsDebounced();
             resizeTicking = false;
