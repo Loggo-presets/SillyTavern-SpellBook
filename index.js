@@ -52,7 +52,8 @@ const defaultSettings = {
     leftBoundaryOffset: 0,
     rightBoundaryOffset: 0,
     mobileInlineMode: false,
-    edgeResizing: true
+    edgeResizing: true,
+    doubleClickToEdit: false
 };
 
 const bgCache = new Map(); // Cache optimized backgrounds
@@ -1998,10 +1999,14 @@ function createWindow(category) {
         const currentCat = getCategoryById(windowEl.attr('data-id'));
         if (currentCat) toggleEditMode(windowEl, currentCat, false);
     });
-    windowEl.find('.sb-content').on('dblclick', () => {
-        const currentCat = getCategoryById(windowEl.attr('data-id'));
-        if (currentCat) toggleEditMode(windowEl, currentCat, true);
-    });
+    // Double-click to edit (conditional based on setting)
+    const dblClickSettings = extension_settings[MODULE_NAME];
+    if (dblClickSettings.doubleClickToEdit) {
+        windowEl.find('.sb-content').on('dblclick', () => {
+            const currentCat = getCategoryById(windowEl.attr('data-id'));
+            if (currentCat) toggleEditMode(windowEl, currentCat, true);
+        });
+    }
 
     windowEl.find('.sb-save-edit-btn').on('click', () => {
         const currentCat = getCategoryById(windowEl.attr('data-id'));
@@ -2665,6 +2670,16 @@ export async function settingsLoaded() {
     alwaysOnTopToggle.on('change', function () {
         extension_settings[MODULE_NAME].alwaysOnTop = $(this).prop('checked');
         $('.sb-container').each(function () { focusWindow($(this)); });
+        saveSettingsDebounced();
+    });
+
+    // Double-Click to Edit
+    const dblClickEditToggle = settingsPage.find('#sb-dblclick-edit-toggle');
+    dblClickEditToggle.prop('checked', extension_settings[MODULE_NAME].doubleClickToEdit === true);
+    dblClickEditToggle.on('change', function () {
+        extension_settings[MODULE_NAME].doubleClickToEdit = $(this).prop('checked');
+        // Re-render all open windows to apply the new setting
+        renderAllOpenWindows();
         saveSettingsDebounced();
     });
 
