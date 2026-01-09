@@ -61,6 +61,11 @@
     pointer-events: none;
 }
 
+.sb-container.sb-locked .sb-window-resizer {
+    display: none;
+    pointer-events: none;
+}
+
 .sb-container.sb-focus {
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
     border-color: rgba(255, 255, 255, 0.15);
@@ -206,6 +211,8 @@
     z-index: 100;
     transition: background 0.2s;
 }
+
+
 
 .sb-sidebar-header {
     display: flex;

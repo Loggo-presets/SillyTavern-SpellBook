@@ -48,11 +48,11 @@ const defaultSettings = {
     enforceBottomBoundary: true,
     topBoundaryOffset: 70,
     bottomBoundaryOffset: 50,
-    enforceLeftBoundary: true,
     enforceRightBoundary: true,
     leftBoundaryOffset: 0,
     rightBoundaryOffset: 0,
-    mobileInlineMode: false
+    mobileInlineMode: false,
+    edgeResizing: true
 };
 
 const bgCache = new Map(); // Cache optimized backgrounds
@@ -1084,36 +1084,47 @@ function showSettingsModal() {
                        <input type="checkbox" id="sb-modal-always-top" ${settings.alwaysOnTop ? 'checked' : ''}>
                     </div>
 
-                    <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
-                       <label style="font-weight:600;">Enforce Top Boundary</label>
-                       <div style="display: flex; align-items: center; gap: 10px;">
-                           <input type="number" id="sb-modal-top-offset" class="text_pole" style="width: 50px; text-align: center;" value="${settings.topBoundaryOffset || 70}" title="Offset in pixels">
-                           <input type="checkbox" id="sb-modal-enforce-top" ${settings.enforceTopBoundary !== false ? 'checked' : ''}>
-                       </div>
-                    </div>
-
-                    <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
-                       <label style="font-weight:600;">Enforce Bottom Boundary</label>
-                       <div style="display: flex; align-items: center; gap: 10px;">
-                           <input type="number" id="sb-modal-bottom-offset" class="text_pole" style="width: 50px; text-align: center;" value="${settings.bottomBoundaryOffset || 50}" title="Buffer in pixels">
-                           <input type="checkbox" id="sb-modal-enforce-bottom" ${settings.enforceBottomBoundary !== false ? 'checked' : ''}>
-                       </div>
-                    </div>
-
-                    <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
-                       <label style="font-weight:600;">Enforce Left Boundary</label>
-                       <div style="display: flex; align-items: center; gap: 10px;">
-                           <input type="number" id="sb-modal-left-offset" class="text_pole" style="width: 50px; text-align: center;" value="${settings.leftBoundaryOffset || 0}" title="Offset in pixels">
-                           <input type="checkbox" id="sb-modal-enforce-left" ${settings.enforceLeftBoundary !== false ? 'checked' : ''}>
-                       </div>
-                    </div>
-
-                    <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
-                       <label style="font-weight:600;">Enforce Right Boundary</label>
-                       <div style="display: flex; align-items: center; gap: 10px;">
-                           <input type="number" id="sb-modal-right-offset" class="text_pole" style="width: 50px; text-align: center;" value="${settings.rightBoundaryOffset || 0}" title="Offset in pixels">
-                           <input type="checkbox" id="sb-modal-enforce-right" ${settings.enforceRightBoundary !== false ? 'checked' : ''}>
-                       </div>
+                    <div style="margin-bottom: 15px; border: 1px solid var(--sb-glass-border); padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.02);">
+                        <div style="font-weight: 600; margin-bottom: 12px; border-bottom: 1px solid var(--sb-glass-border); padding-bottom: 8px;">Window Boundaries</div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                               <label style="font-size: 0.9em;">Top</label>
+                               <div style="display: flex; align-items: center; gap: 6px;">
+                                   <input type="number" id="sb-modal-top-offset" class="text_pole" style="width: 40px; text-align: center; font-size: 0.85em;" value="${settings.topBoundaryOffset || 70}" title="Offset in pixels">
+                                   <input type="checkbox" id="sb-modal-enforce-top" ${settings.enforceTopBoundary !== false ? 'checked' : ''}>
+                               </div>
+                            </div>
+                            
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                               <label style="font-size: 0.9em;">Bottom</label>
+                               <div style="display: flex; align-items: center; gap: 6px;">
+                                   <input type="number" id="sb-modal-bottom-offset" class="text_pole" style="width: 40px; text-align: center; font-size: 0.85em;" value="${settings.bottomBoundaryOffset || 50}" title="Buffer in pixels">
+                                   <input type="checkbox" id="sb-modal-enforce-bottom" ${settings.enforceBottomBoundary !== false ? 'checked' : ''}>
+                               </div>
+                            </div>
+                            
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                               <label style="font-size: 0.9em;">Left</label>
+                               <div style="display: flex; align-items: center; gap: 6px;">
+                                   <input type="number" id="sb-modal-left-offset" class="text_pole" style="width: 40px; text-align: center; font-size: 0.85em;" value="${settings.leftBoundaryOffset || 0}" title="Offset in pixels">
+                                   <input type="checkbox" id="sb-modal-enforce-left" ${settings.enforceLeftBoundary !== false ? 'checked' : ''}>
+                               </div>
+                            </div>
+                            
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                               <label style="font-size: 0.9em;">Right</label>
+                               <div style="display: flex; align-items: center; gap: 6px;">
+                                   <input type="number" id="sb-modal-right-offset" class="text_pole" style="width: 40px; text-align: center; font-size: 0.85em;" value="${settings.rightBoundaryOffset || 0}" title="Offset in pixels">
+                                   <input type="checkbox" id="sb-modal-enforce-right" ${settings.enforceRightBoundary !== false ? 'checked' : ''}>
+                               </div>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: space-between;">
+                           <label style="font-weight:600;">Drag to Resize</label>
+                           <input type="checkbox" id="sb-modal-edge-resizing" ${settings.edgeResizing !== false ? 'checked' : ''}>
+                        </div>
                     </div>
 
                     <div style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
@@ -1297,6 +1308,28 @@ function showSettingsModal() {
 
         modal.find('#sb-modal-enforce-right').on('change', function () { settings.enforceRightBoundary = $(this).is(':checked'); saveSettingsDebounced(); });
         modal.find('#sb-modal-right-offset').on('change', function () { settings.rightBoundaryOffset = parseInt($(this).val()) || 0; saveSettingsDebounced(); });
+
+        modal.find('#sb-modal-right-offset').on('change', function () { settings.rightBoundaryOffset = parseInt($(this).val()) || 0; saveSettingsDebounced(); });
+
+        // Edge Resizing Toggle
+        const edgeResizeToggle = modal.find('#sb-modal-edge-resizing');
+        edgeResizeToggle.on('change', function () {
+            settings.edgeResizing = $(this).is(':checked');
+            saveSettingsDebounced();
+            // Apply immediately to open windows
+            $('.sb-container').each(function () {
+                const win = $(this);
+                // We'd need to re-render to attach/detach listeners properly or simply toggle display
+                // For simplicity, we can reload windows or just use CSS/JS check
+                // Let's rely on the next render or reload for full effect, 
+                // BUT we can toggle the display of resizers now.
+                if (settings.edgeResizing) {
+                    win.find('.sb-window-resizer').show();
+                } else {
+                    win.find('.sb-window-resizer').hide();
+                }
+            });
+        });
 
         const shortcutList = modal.find('#sb-modal-shortcuts-list');
         settings.categories.forEach(cat => {
@@ -1770,6 +1803,17 @@ function createWindow(category) {
                 height: 50vh;
                 z-index: ${baseZ};
             `;
+        } else if (!isMobile()) {
+            // Desktop: Apply saved position from windowState
+            const baseZ = getDynamicBaseZIndex();
+            windowEl.css({
+                position: 'fixed',
+                top: ws.top || '100px',
+                left: ws.left || '100px',
+                width: ws.width || '650px',
+                height: ws.height || '550px',
+                zIndex: baseZ
+            });
         }
     }
 
@@ -1788,6 +1832,8 @@ function createWindow(category) {
 
             const onMove = (e) => {
                 e.preventDefault();
+
+
                 const clientY = e.touches ? e.touches[0].clientY : e.clientY;
                 const deltaY = clientY - startY;
                 // Top-anchored: Drag down (positive) = Grow
@@ -2119,6 +2165,7 @@ function createWindow(category) {
     let startDragX = 0;
     let startDragY = 0;
     let startDragHeight = 0;
+    let startDragWidth = 0;
 
     // Function to handle drag move
     let dragTicking = false;
@@ -2159,8 +2206,20 @@ function createWindow(category) {
                 // Side Clamping
                 const enforceLeft = settings.enforceLeftBoundary !== false;
                 const enforceRight = settings.enforceRightBoundary !== false;
+
+                // Calculate new width based on horizontal drag (edgeResizing feature)
+                let newWidth = startDragWidth;
+                if (settings.edgeResizing !== false) {
+                    // Calculate how far we've moved from original position
+                    const originalLeft = startDragX;
+                    const deltaX = Math.abs(clientX - originalLeft - windowEl.offset().left);
+                    // Window narrows as you drag it further in any direction
+                    // The more you drag, the narrower it gets
+                    newWidth = Math.max(450, startDragWidth - deltaX * 0.5);
+                }
+
                 if (enforceLeft || enforceRight) {
-                    const width = windowEl.outerWidth();
+                    const width = newWidth;
                     const leftOff = settings.leftBoundaryOffset || 0;
                     const rightOff = settings.rightBoundaryOffset || 0;
                     if (enforceLeft) newLeft = Math.max(leftOff, newLeft);
@@ -2214,7 +2273,8 @@ function createWindow(category) {
                 windowEl.css({
                     left: newLeft,
                     top: finalTop,
-                    height: finalHeight
+                    height: finalHeight,
+                    width: newWidth
                 });
             }
             dragTicking = false;
@@ -2232,6 +2292,7 @@ function createWindow(category) {
             if (currentCat) {
                 currentCat.windowState.top = windowEl.css('top');
                 currentCat.windowState.left = windowEl.css('left');
+                currentCat.windowState.width = windowEl.css('width');
             }
             saveSettingsDebounced();
         }
@@ -2256,6 +2317,7 @@ function createWindow(category) {
             startDragY = clientY - windowEl.offset().top;
         }
         startDragHeight = windowEl.outerHeight();
+        startDragWidth = windowEl.outerWidth();
 
         header.css('cursor', 'grabbing');
 
